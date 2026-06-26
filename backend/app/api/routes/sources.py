@@ -7,6 +7,8 @@ from app.db.session import get_db
 from app.models.source import Source
 from app.models.topic import Topic
 from app.schemas.topic import TopicOut
+from app.agent_core.boundaries import workspace_context
+from app.agent_core.rag_service import source_index_status
 from app.services.custom_topic_creator import CustomTopicIdea, ResearchReference, generate_source_topic_ideas
 from app.services.source_importer import normalize_url
 from app.services.topic_scorer import score_topic
@@ -75,6 +77,7 @@ def list_sources(
         q = q.filter(Source.source_type == source_type)
     total = q.count()
     items = q.order_by(Source.created_at.desc()).offset((page - 1) * limit).limit(limit).all()
+    context = workspace_context(db)
 
     return {
         "total": total,
@@ -89,6 +92,7 @@ def list_sources(
             "topic_count": db.query(Topic).filter(Topic.source_id == s.id).count(),
             "quality_flags": _source_quality_flags(s, db.query(Topic).filter(Topic.source_id == s.id).count()),
             "duplicate_hint": _source_duplicate_hint(s, db),
+            "rag_index": source_index_status(s.id, db, context),
         } for s in items],
     }
 
@@ -192,6 +196,7 @@ def get_source(source_id: int, db: Session = Depends(get_db)):
     if not s:
         raise HTTPException(404, "素材不存在")
     topics = db.query(Topic).filter(Topic.source_id == source_id).order_by(Topic.created_at.desc()).all()
+    context = workspace_context(db)
     return {
         "id": s.id,
         "source_type": s.source_type,
@@ -202,6 +207,7 @@ def get_source(source_id: int, db: Session = Depends(get_db)):
         "created_at": s.created_at.isoformat() if s.created_at else None,
         "quality_flags": _source_quality_flags(s, len(topics)),
         "duplicate_hint": _source_duplicate_hint(s, db),
+        "rag_index": source_index_status(s.id, db, context),
         "topics": [{
             "id": t.id, "title": t.title, "content_angle": t.content_angle,
             "score": t.score, "status": t.status,

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AgentRun, AgentRunCreate, AgentRunResult, api } from '../api/client';
+import { AgentRun, AgentRunCreate, AgentRunResult, KnowledgeBase, api } from '../api/client';
 
 interface Props {
   onNavigate: (page: string) => void;
@@ -45,6 +45,28 @@ interface AgentDecision {
   next_actions?: AgentDecisionAction[];
 }
 
+interface RagContextHit {
+  chunk_id?: number;
+  title?: string;
+  source_uri?: string;
+  content?: string;
+  score?: number;
+}
+
+interface RagContext {
+  enabled?: boolean;
+  evidence_status?: string;
+  knowledge_base_id?: number;
+  knowledge_base_name?: string;
+  coverage?: {
+    top_score?: number;
+    evidence_count?: number;
+    distinct_documents?: number;
+    status?: string;
+  };
+  hits?: RagContextHit[];
+}
+
 export default function AgentWorkbenchPage({ onNavigate }: Props) {
   const [form, setForm] = useState<AgentRunCreate>({
     goal: '普通人怎么用 AI 自动化副业内容',
@@ -56,11 +78,16 @@ export default function AgentWorkbenchPage({ onNavigate }: Props) {
     content_type: 'auto',
     source_urls: [],
     provider: 'local',
-    model: '',
-    auto_score: true,
-  });
-  const [sourceUrlsText, setSourceUrlsText] = useState('');
-  const [run, setRun] = useState<AgentRunResult | null>(null);
+	    model: '',
+	    auto_score: true,
+	    use_rag: false,
+	    knowledge_base_id: null,
+	    rag_top_k: 5,
+	    rag_min_score: 0.08,
+	  });
+	  const [sourceUrlsText, setSourceUrlsText] = useState('');
+	  const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
+	  const [run, setRun] = useState<AgentRunResult | null>(null);
   const [history, setHistory] = useState<AgentRun[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -68,7 +95,15 @@ export default function AgentWorkbenchPage({ onNavigate }: Props) {
     api.listAgentRuns(12).then(setHistory).catch(() => setHistory([]));
   };
 
-  useEffect(() => { loadHistory(); }, []);
+	  useEffect(() => {
+	    loadHistory();
+	    api.listKnowledgeBases().then(items => {
+	      setKnowledgeBases(items);
+	      if (items[0]) {
+	        setForm(prev => prev.knowledge_base_id ? prev : { ...prev, knowledge_base_id: items[0].id });
+	      }
+	    }).catch(() => setKnowledgeBases([]));
+	  }, []);
 
   useEffect(() => {
     if (!run || !['pending', 'running'].includes(run.status)) return;
@@ -133,10 +168,12 @@ export default function AgentWorkbenchPage({ onNavigate }: Props) {
   const issues = Array.isArray(evaluation.issues) ? evaluation.issues as Array<{ message?: string; level?: string; card_page?: number }> : [];
   const ideas = ((run?.result_json?.topic_ideas as Record<string, unknown> | undefined)?.ideas || []) as Array<Record<string, unknown>>;
   const decision = (run?.result_json?.agent_decision || null) as AgentDecision | null;
-  const decisionActions = Array.isArray(decision?.next_actions) ? decision.next_actions : [];
-  const reviewFocus = Array.isArray(decision?.manual_review_focus) ? decision.manual_review_focus : [];
-  const whyThisTopic = Array.isArray(decision?.why_this_topic) ? decision.why_this_topic : [];
-  const revisionChanges = Array.isArray(decision?.revision?.changes) ? decision.revision.changes : [];
+	  const decisionActions = Array.isArray(decision?.next_actions) ? decision.next_actions : [];
+	  const reviewFocus = Array.isArray(decision?.manual_review_focus) ? decision.manual_review_focus : [];
+	  const whyThisTopic = Array.isArray(decision?.why_this_topic) ? decision.why_this_topic : [];
+	  const revisionChanges = Array.isArray(decision?.revision?.changes) ? decision.revision.changes : [];
+	  const ragContext = (run?.result_json?.rag_context || null) as RagContext | null;
+	  const ragHits = Array.isArray(ragContext?.hits) ? ragContext.hits : [];
 
   return (
     <div>
@@ -223,15 +260,48 @@ export default function AgentWorkbenchPage({ onNavigate }: Props) {
               />
             </div>
           )}
-          <label className="checkbox-row">
-            <input
-              type="checkbox"
-              checked={Boolean(form.auto_score)}
-              onChange={e => setForm({ ...form, auto_score: e.target.checked })}
-            />
-            <span>自动评分推荐选题</span>
-          </label>
-          <button className="btn btn-primary agent-start-button" onClick={handleStart} disabled={loading || !form.goal.trim()}>
+	          <label className="checkbox-row">
+	            <input
+	              type="checkbox"
+	              checked={Boolean(form.auto_score)}
+	              onChange={e => setForm({ ...form, auto_score: e.target.checked })}
+	            />
+	            <span>自动评分推荐选题</span>
+	          </label>
+	          <div className="agent-rag-config">
+	            <label className="checkbox-row">
+	              <input
+	                type="checkbox"
+	                checked={Boolean(form.use_rag)}
+	                onChange={e => setForm({ ...form, use_rag: e.target.checked })}
+	              />
+	              <span>启用知识库检索</span>
+	            </label>
+	            {form.use_rag && (
+	              <div className="form-row">
+	                <div className="form-group">
+	                  <label>知识库</label>
+	                  <select
+	                    value={form.knowledge_base_id || ''}
+	                    onChange={e => setForm({ ...form, knowledge_base_id: e.target.value ? Number(e.target.value) : null })}
+	                  >
+	                    {knowledgeBases.map(item => (
+	                      <option key={item.id} value={item.id}>#{item.id} {item.name}</option>
+	                    ))}
+	                  </select>
+	                </div>
+	                <div className="form-group">
+	                  <label>证据数量</label>
+	                  <select value={form.rag_top_k || 5} onChange={e => setForm({ ...form, rag_top_k: Number(e.target.value) })}>
+	                    <option value={3}>3 条</option>
+	                    <option value={5}>5 条</option>
+	                    <option value={8}>8 条</option>
+	                  </select>
+	                </div>
+	              </div>
+	            )}
+	          </div>
+	          <button className="btn btn-primary agent-start-button" onClick={handleStart} disabled={loading || !form.goal.trim()}>
             {loading ? '任务创建中...' : '开始生成完整发布包'}
           </button>
         </section>
@@ -273,9 +343,40 @@ export default function AgentWorkbenchPage({ onNavigate }: Props) {
                 {step.error_message && <em>{step.error_message}</em>}
               </div>
             ))}
-          </div>
+	          </div>
 
-          {decision && (
+	          {ragContext?.enabled && (
+	            <div className={`agent-rag-evidence ${ragContext.evidence_status === 'sufficient' ? 'ok' : 'weak'}`}>
+	              <div className="agent-rag-evidence__header">
+	                <div>
+	                  <span>知识库证据</span>
+	                  <strong>
+	                    {ragContext.evidence_status === 'sufficient' ? '证据可用' : '证据不足'}
+	                  </strong>
+	                  <p>
+	                    知识库 #{ragContext.knowledge_base_id} ·
+	                    命中 {ragContext.coverage?.evidence_count || 0} 条 ·
+	                    最高分 {ragContext.coverage?.top_score ?? 0}
+	                  </p>
+	                </div>
+	              </div>
+	              {ragHits.length > 0 ? (
+	                <div className="agent-rag-hit-list">
+	                  {ragHits.slice(0, 5).map((hit, index) => (
+	                    <div key={`${hit.chunk_id}-${index}`}>
+	                      <span>chunk #{hit.chunk_id} · {hit.score ?? '-'}</span>
+	                      <strong>{hit.title || '未命名来源'}</strong>
+	                      <p>{String(hit.content || '').slice(0, 180)}</p>
+	                    </div>
+	                  ))}
+	                </div>
+	              ) : (
+	                <p className="agent-rag-empty">当前知识库没有足够相关证据，后续内容需要人工补来源或降级为观点草稿。</p>
+	              )}
+	            </div>
+	          )}
+
+	          {decision && (
             <div className="agent-decision">
               <div className="agent-decision__main">
                 <span>Agent 决策</span>

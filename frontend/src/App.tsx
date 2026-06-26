@@ -7,6 +7,8 @@ import MetricsPage from './pages/MetricsPage';
 import ReportsPage from './pages/ReportsPage';
 import SettingsPage from './pages/SettingsPage';
 import AgentWorkbenchPage from './pages/AgentWorkbenchPage';
+import ArchitecturePage from './pages/ArchitecturePage';
+import RagLabPage from './pages/RagLabPage';
 import ErrorBoundary from './components/ErrorBoundary';
 
 export default function App() {
@@ -22,6 +24,8 @@ export default function App() {
         {page === 'metrics' && <MetricsPage />}
         {page === 'reports' && <ReportsPage />}
         {page === 'settings' && <SettingsPage />}
+        {page === 'architecture' && <ArchitecturePage />}
+        {page === 'rag' && <RagLabPage />}
       </ErrorBoundary>
     </AppShell>
   );

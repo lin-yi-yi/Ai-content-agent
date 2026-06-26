@@ -148,6 +148,17 @@ export interface SourceItem {
   topic_count: number;
   quality_flags?: string[];
   duplicate_hint?: string;
+  rag_index?: SourceRagIndexStatus;
+}
+
+export interface SourceRagIndexStatus {
+  indexed: boolean;
+  workspace_id: number;
+  knowledge_base_id: number;
+  document_count: number;
+  chunk_count: number;
+  last_document_id: number | null;
+  updated_at: string | null;
 }
 
 export interface SourceList {
@@ -166,6 +177,7 @@ export interface SourceDetail extends Omit<SourceItem, 'topic_count'> {
   raw_content: string | null;
   quality_flags?: string[];
   duplicate_hint?: string;
+  rag_index?: SourceRagIndexStatus;
   topics: Array<{
     id: number;
     title: string;
@@ -333,6 +345,11 @@ export interface AgentRunCreate {
   provider?: string;
   model?: string;
   auto_score?: boolean;
+  use_rag?: boolean;
+  workspace_id?: number | null;
+  knowledge_base_id?: number | null;
+  rag_top_k?: number;
+  rag_min_score?: number;
 }
 
 export interface AgentStep {
@@ -374,6 +391,151 @@ export interface AgentRunResult extends AgentRun {
   draft: Draft | null;
   cards: Card[];
   evaluation: Record<string, unknown> | null;
+}
+
+export interface CapabilitySpec {
+  name: string;
+  label: string;
+  category: string;
+  access_level: string;
+  allowed_actions: string[];
+  data_scope: string;
+  can_write: boolean;
+  limitations: string[];
+}
+
+export interface AgentToolSpec {
+  name: string;
+  label: string;
+  description: string;
+  category: string;
+  capability: string;
+  action: string;
+  data_scope: string;
+  writes: boolean;
+  boundary_rules: string[];
+  input_schema: Record<string, unknown>;
+}
+
+export interface AgentToolListResponse {
+  items: AgentToolSpec[];
+  total: number;
+}
+
+export interface AgentToolExecuteRequest {
+  tool_name: string;
+  workspace_id?: number | null;
+  knowledge_base_id?: number | null;
+  arguments?: Record<string, unknown>;
+}
+
+export interface AgentToolExecuteResponse {
+  tool_name: string;
+  label: string;
+  capability: string;
+  action: string;
+  workspace_id: number;
+  knowledge_base_id: number;
+  writes: boolean;
+  boundary: {
+    data_scope: string;
+    rules: string[];
+  };
+  output: Record<string, unknown>;
+}
+
+export interface ArchitectureInfo {
+  version: string;
+  product_boundary: {
+    product: string;
+    primary_scenario: string;
+    in_scope: string[];
+    out_of_scope: string[];
+  };
+  data_isolation: {
+    default_workspace_id: number;
+    default_knowledge_base_id: number;
+    rule: string;
+    tables: string[];
+    legacy_tables: string;
+  };
+  retrieval_strategy?: {
+    name: string;
+    embedding_provider: string;
+    embedding_model: string;
+    embedding_dim: number;
+    scoring: string;
+    limitation: string;
+  };
+  capabilities: CapabilitySpec[];
+  tools: AgentToolSpec[];
+  framework_status: {
+    langchain_available: boolean;
+    langgraph_available: boolean;
+    langchain_usage: string;
+    langgraph_usage: string;
+  };
+  workflow_boundary: {
+    current: string;
+    v04_extension: string;
+    async_boundary: string;
+  };
+}
+
+export interface KnowledgeBase {
+  id: number;
+  workspace_id: number;
+  name: string;
+  purpose: string | null;
+  boundary_notes: string | null;
+  status: string;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface RagIndexSourceRequest {
+  source_id: number;
+  workspace_id?: number | null;
+  knowledge_base_id?: number | null;
+  ingestion_profile?: string;
+}
+
+export interface RagIndexSourceResult {
+  workspace_id: number;
+  knowledge_base_id: number;
+  document_id: number;
+  source_id: number;
+  title: string;
+  chunk_count: number;
+  content_hash: string;
+  ingestion_profile: string;
+}
+
+export interface RagSearchHit {
+  chunk_id: number;
+  document_id: number;
+  knowledge_base_id: number;
+  workspace_id: number;
+  source_id: number | null;
+  title: string;
+  source_uri: string;
+  content: string;
+  score: number;
+  chunk_index: number;
+  metadata: Record<string, unknown>;
+}
+
+export interface RagSearchResponse {
+  items: RagSearchHit[];
+  total: number;
+}
+
+export interface RagAnswerResponse {
+  answer: string;
+  refused: boolean;
+  refusal_reason: string;
+  coverage: Record<string, unknown>;
+  citations: RagSearchHit[];
 }
 
 export interface Metric {
@@ -591,4 +753,22 @@ export const api = {
 
   retryAgentRun: (id: number) =>
     request<AgentRunResult>(`/api/agent-runs/${id}/retry`, { method: 'POST', body: JSON.stringify({}) }),
+
+  getArchitecture: () => request<ArchitectureInfo>('/api/v04/architecture'),
+
+  listAgentTools: () => request<AgentToolListResponse>('/api/v04/tools'),
+
+  executeAgentTool: (body: AgentToolExecuteRequest) =>
+    request<AgentToolExecuteResponse>('/api/v04/tools/execute', { method: 'POST', body: JSON.stringify(body) }),
+
+  listKnowledgeBases: () => request<KnowledgeBase[]>('/api/v04/knowledge-bases'),
+
+  indexSourceForRag: (body: RagIndexSourceRequest) =>
+    request<RagIndexSourceResult>('/api/v04/rag/index-source', { method: 'POST', body: JSON.stringify(body) }),
+
+  searchRag: (body: { query: string; knowledge_base_id?: number | null; top_k?: number }) =>
+    request<RagSearchResponse>('/api/v04/rag/search', { method: 'POST', body: JSON.stringify(body) }),
+
+  answerWithRag: (body: { query: string; knowledge_base_id?: number | null; provider?: string; model?: string; top_k?: number }) =>
+    request<RagAnswerResponse>('/api/v04/rag/answer', { method: 'POST', body: JSON.stringify(body) }),
 };

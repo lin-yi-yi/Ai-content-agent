@@ -8,3 +8,5 @@ from app.models.model_run import ModelRun
 from app.models.weekly_report import WeeklyReport
 from app.models.review_checklist import ReviewChecklist
 from app.models.agent_run import AgentRun, AgentStep
+from app.models.workspace import Workspace
+from app.models.knowledge_base import KnowledgeBase, KnowledgeDocument, KnowledgeChunk

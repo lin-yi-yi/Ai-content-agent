@@ -1,18 +1,18 @@
-# AI 内容增长 Agent v0.3
+# AI 内容增长 Agent v0.4
 
 **普通人的AI提效实验室内容工作台**
 
 半自动内容生产 Agent —— 帮普通人把 AI 工作流、Agent 开发、开源项目和提效案例，转化成适合小红书/抖音图文发布的内容资产。
 
-当前已推进到 v0.3-G：除 URL/GitHub 导入外，已支持 Agent 工作台、自定义选题创作、入库前编辑、重复提示、素材库一源多题、发布方案生成、组合诊断、卡片实时预览与样式参数化、质量评分、人工审核清单、ZIP 发布包导出、异步 Agent Run、失败重试、自动轻量改稿和 Agent 决策摘要。
+当前已推进到 v0.4-D：除 URL/GitHub 导入外，已支持 Agent 工作台、自定义选题创作、入库前编辑、重复提示、素材库一源多题、发布方案生成、组合诊断、卡片实时预览与样式参数化、质量评分、人工审核清单、ZIP 发布包导出、异步 Agent Run、失败重试、自动轻量改稿、Agent 决策摘要、RAG 知识库检索和受控工具调用白名单。
 
 ## 项目交接文档
 
 给后续 Claude Code、Codex 或同事接手开发时，请先阅读：
 
 ```text
-/Users/linlinjun/Desktop/laihaoxiong/AI内容增长Agent_项目总交接与开发规划.md
-/Users/linlinjun/Desktop/laihaoxiong/AI内容增长Agent_v0.2-J发布方案生成器开发任务书.md
+README.md
+docs/v0.4-agent-architecture.md
 ```
 
 ## 第一版功能范围
@@ -149,6 +149,29 @@ http://localhost:5173
 | v0.3-F | 发布包组合诊断 | ✅ 发布包编辑页根据标题/封面/正文/标签/页数/模板实时评分，提示问题和是否应生成匹配卡片 |
 | v0.3-G | 卡片编辑器样式参数化与实时预览 | ✅ 单卡编辑 Modal 支持右侧实时预览，字号/密度/强调块/页脚参数写入 style_json，并同步 PNG/ZIP 导出 |
 | v0.3-H | 数据闭环增强基础版 | ✅ 复盘加入收藏率/点赞率/评论率/关注转化率，支持按角度/内容类型/模板聚合 |
+| v0.4-A | Agent 架构边界与 RAG 基础层 | ✅ 新增 workspace / knowledge_base 数据隔离、能力白名单、LangChain 可选切分器、RAG 索引/检索/拒答 API、架构边界页面 |
+| v0.4-B | RAG 接入 Agent 工作台 | ✅ 素材库显示索引状态，Agent Run 新增可选 retrieve_context 步骤，工作台可选择知识库并展示检索证据 |
+| v0.4-C | 本地混合检索与 RAG 实验台 | ✅ knowledge_chunks 写入本地 128 维哈希 embedding，检索改为词面+向量混合评分，新增 RAG 实验页和 smoke 脚本 |
+| v0.4-D | 受控 Function Calling 工具层 | ✅ 新增 `rag.search` / `rag.answer` / `source.index` 工具白名单、工具执行 API 和架构页工具边界展示 |
+
+## v0.4 Agent 架构边界
+
+详细设计见：
+
+```text
+docs/v0.4-agent-architecture.md
+```
+
+核心约束：
+
+- RAG 数据单独进入 `workspaces` / `knowledge_bases` / `knowledge_documents` / `knowledge_chunks`
+- 检索和回答必须限制在当前 `workspace_id` + `knowledge_base_id`
+- 只索引已入库素材，不读取本机任意文件、浏览器状态、账号密码或外部密钥
+- 证据不足时 RAG 必须拒答
+- 当前仍保留 v0.3 线性 Agent 流程，LangGraph 作为后续分支工作流入口
+- Agent 工作台启用知识库检索后，会先执行 `retrieve_context`，再进入选题/发布包生成
+- v0.4-C 当前是本地哈希 embedding + 混合检索，适合离线开发验证；外部 embedding/vector DB 是后续升级项
+- v0.4-D 工具调用只能执行后端白名单里的 `rag.search`、`rag.answer`、`source.index`，不接受任意函数名、SQL、文件路径或外部账号能力
 
 ## 本地验证
 
@@ -159,6 +182,15 @@ python3 scripts/smoke_publish_generation.py
 ```
 
 脚本会打开本地前端，选择一个已生成选题，点击「生成匹配卡片」，检查页面不白屏、卡片正常渲染、控制台无错误，并删除临时生成的发布包。
+
+v0.4 RAG Agent 链路冒烟测试：
+
+```bash
+python3 scripts/smoke_v04_rag_agent.py
+```
+
+脚本会创建临时素材、索引知识库、启动启用 RAG 的 Agent Run、检查 `retrieve_context`、验证证据不足拒答，并清理临时数据。
+同时会检查 v0.4 工具白名单和 `rag.search` 工具执行入口。
 
 自定义选题创作建议用 local provider 验证，避免产生真实模型费用：
 
@@ -181,10 +213,9 @@ curl -s -X POST -H 'Content-Type: application/json' \
 发布包组合诊断验证：
 
 ```bash
-cd /Users/linlinjun/Desktop/laihaoxiong/ai-content-agent
 python3 -m compileall backend/app
 
-cd /Users/linlinjun/Desktop/laihaoxiong/ai-content-agent/frontend
+cd frontend
 npm run build
 ```
 
@@ -204,6 +235,44 @@ POST   /api/agent-runs                 启动一次内容增长 Agent 任务
 GET    /api/agent-runs                 Agent 执行记录列表
 GET    /api/agent-runs/{id}            Agent 执行详情、步骤和产物
 POST   /api/agent-runs/{id}/retry      从失败步骤继续重试
+```
+
+`POST /api/agent-runs` 可选 RAG 参数：
+
+```json
+{
+  "use_rag": true,
+  "knowledge_base_id": 1,
+  "rag_top_k": 5
+}
+```
+
+启用后会把检索结果写入 `result_json.rag_context`，工作台会展示证据状态和命中的 chunk。
+
+### v0.4 RAG / Tool Calling
+```
+GET    /api/v04/architecture            架构边界、能力白名单、工具白名单
+GET    /api/v04/workspaces              工作区列表
+GET    /api/v04/knowledge-bases         知识库列表
+POST   /api/v04/knowledge-bases         新增知识库
+POST   /api/v04/rag/index-source        把已有 source 索引进知识库
+POST   /api/v04/rag/search              在知识库内检索 evidence chunks
+POST   /api/v04/rag/answer              基于 evidence 回答或拒答
+GET    /api/v04/tools                   工具白名单
+POST   /api/v04/tools/execute           执行白名单工具
+```
+
+`POST /api/v04/tools/execute` 示例：
+
+```json
+{
+  "tool_name": "rag.search",
+  "knowledge_base_id": 1,
+  "arguments": {
+    "query": "LangChain、RAG 和 LangGraph 的边界是什么？",
+    "top_k": 5
+  }
+}
 ```
 
 ### 选题池

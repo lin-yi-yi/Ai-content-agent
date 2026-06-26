@@ -719,6 +719,12 @@ textarea { min-height: 80px; resize: vertical; }
   line-height: 1.4;
 }
 
+.source-inline-success {
+  color: #0f766e !important;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .source-quality-row {
   display: flex;
   flex-wrap: wrap;
@@ -759,6 +765,44 @@ textarea { min-height: 80px; resize: vertical; }
   color: var(--accent);
   font-size: 13px;
   font-weight: 700;
+}
+
+.source-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 10px;
+}
+
+.source-detail-actions a {
+  margin-top: 0;
+}
+
+.source-rag-status {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.source-rag-status.ok {
+  border: 1px solid #99f6e4;
+  background: #f0fdfa;
+  color: #0f766e;
+}
+
+.source-rag-status.error {
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.source-rag-status.idle {
+  border: 1px solid #d1d5db;
+  background: #f9fafb;
+  color: var(--text-secondary);
 }
 
 .source-topic-history,
@@ -2234,6 +2278,16 @@ textarea { min-height: 80px; resize: vertical; }
   margin-top: 10px;
 }
 
+.agent-rag-config {
+  display: grid;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
 .agent-history {
   display: grid;
   gap: 10px;
@@ -2348,6 +2402,75 @@ textarea { min-height: 80px; resize: vertical; }
   font-size: 11px;
   font-style: normal;
   line-height: 1.35;
+}
+
+.agent-rag-evidence {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #fff;
+}
+
+.agent-rag-evidence.ok {
+  border-color: #99f6e4;
+  background: #f0fdfa;
+}
+
+.agent-rag-evidence.weak {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.agent-rag-evidence__header span,
+.agent-rag-hit-list span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.agent-rag-evidence__header strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-primary);
+  font-size: 16px;
+}
+
+.agent-rag-evidence__header p,
+.agent-rag-empty {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.agent-rag-hit-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.agent-rag-hit-list div {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.agent-rag-hit-list strong {
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.agent-rag-hit-list p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .agent-decision {
@@ -2629,11 +2752,260 @@ textarea { min-height: 80px; resize: vertical; }
   line-height: 1.45;
 }
 
+.architecture-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
+  gap: 16px;
+  align-items: stretch;
+  padding: 18px;
+  margin-bottom: 18px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.architecture-hero span,
+.architecture-status-grid span,
+.capability-item span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.architecture-hero strong {
+  display: block;
+  margin-top: 6px;
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1.35;
+}
+
+.architecture-hero p {
+  margin-top: 10px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.architecture-status-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.architecture-status-grid div {
+  min-height: 82px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.architecture-status-grid strong {
+  display: block;
+  margin-top: 8px;
+  color: var(--accent);
+  font-size: 17px;
+}
+
+.architecture-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.boundary-list {
+  display: grid;
+  gap: 8px;
+}
+
+.boundary-item {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.boundary-item.allowed {
+  border-color: #99f6e4;
+  background: #f0fdfa;
+}
+
+.boundary-item.denied {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.capability-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.tool-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.capability-item {
+  display: grid;
+  gap: 10px;
+  min-height: 210px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.tool-item {
+  display: grid;
+  gap: 10px;
+  min-height: 210px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.tool-item.read {
+  border-color: #bfdbfe;
+}
+
+.tool-item.write {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.capability-item strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--text);
+  font-size: 15px;
+}
+
+.tool-item strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--text);
+  font-size: 15px;
+  word-break: break-word;
+}
+
+.capability-item p,
+.capability-item small,
+.capability-item li,
+.tool-item p,
+.tool-item small,
+.tool-item li,
+.architecture-fact-list p {
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.tool-item span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.capability-item ul {
+  margin-left: 18px;
+}
+
+.tool-item ul {
+  margin-left: 18px;
+}
+
+.architecture-fact-list {
+  display: grid;
+  gap: 10px;
+}
+
+.rag-lab-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  margin-bottom: 18px;
+}
+
+.rag-answer-box {
+  display: grid;
+  gap: 10px;
+  min-height: 220px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.rag-answer-box.ok {
+  border-color: #99f6e4;
+  background: #f0fdfa;
+}
+
+.rag-answer-box.refused {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.rag-answer-box span,
+.rag-hit-item span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.rag-answer-box strong,
+.rag-hit-item strong {
+  color: var(--text-primary);
+  font-size: 15px;
+}
+
+.rag-answer-box p,
+.rag-answer-box small,
+.rag-hit-item p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.rag-hit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.rag-hit-item {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.rag-hit-item div {
+  display: grid;
+  gap: 5px;
+}
+
+.rag-hit-item a {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 800;
+}
+
 @media (max-width: 900px) {
   .sidebar { position: static; width: 100%; border-right: 0; border-bottom: 1px solid var(--border); }
   .app-shell { display: block; }
   .main { margin-left: 0; padding: 20px; max-width: none; }
-  .grid-two, .form-row, .draft-editor-layout, .variant-grid, .draft-combo-metrics, .draft-combo-feedback, .draft-selected-summary, .draft-candidate-grid, .review-checklist, .custom-mode-grid, .source-stat-grid, .source-workspace, .source-topic-list, .source-idea-grid, .agent-layout, .agent-step-grid, .agent-idea-grid, .agent-summary-grid, .agent-card-list, .agent-decision__stats, .agent-action-list, .agent-review-focus { grid-template-columns: 1fr; }
+  .grid-two, .form-row, .draft-editor-layout, .variant-grid, .draft-combo-metrics, .draft-combo-feedback, .draft-selected-summary, .draft-candidate-grid, .review-checklist, .custom-mode-grid, .source-stat-grid, .source-workspace, .source-topic-list, .source-idea-grid, .agent-layout, .agent-step-grid, .agent-idea-grid, .agent-summary-grid, .agent-card-list, .agent-decision__stats, .agent-action-list, .agent-review-focus, .agent-rag-hit-list, .architecture-hero, .architecture-grid, .capability-grid, .tool-grid, .architecture-status-grid, .rag-lab-layout, .rag-hit-grid { grid-template-columns: 1fr; }
   .source-list-panel { position: static; max-height: none; }
   .draft-topic-sidebar { max-height: none; }
   .variant-panel__header, .draft-combo-panel__header { display: grid; }

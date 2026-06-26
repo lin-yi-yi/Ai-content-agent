@@ -4,6 +4,8 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.agent_core.boundaries import get_knowledge_base_or_default, workspace_context
+from app.agent_core.rag_service import search_knowledge
 from app.db.session import SessionLocal
 from app.models.agent_run import AgentRun, AgentStep
 from app.models.card import Card
@@ -25,6 +27,7 @@ from app.services.topic_scorer import score_topic
 REVISION_THRESHOLD = 75
 
 STEP_PLAN = [
+    ("retrieve_context", "知识库检索上下文"),
     ("topic_ideas", "生成 5 个选题建议"),
     ("create_topic", "推荐最佳选题并入库"),
     ("score_topic", "选题评分"),
@@ -138,6 +141,7 @@ async def run_content_growth_agent(req: AgentRunCreate, db: Session) -> AgentRun
 async def _execute_steps(run: AgentRun, req: AgentRunCreate, db: Session) -> None:
     steps = _steps_by_key(run.id, db)
     try:
+        await _step_retrieve_context(run, req, steps["retrieve_context"], db)
         selected_idea = await _step_topic_ideas(run, req, steps["topic_ideas"], db)
         topic = await _step_create_topic(run, selected_idea, steps["create_topic"], db)
         topic = await _step_score_topic(run, req, topic, steps["score_topic"], db)
@@ -165,18 +169,69 @@ async def _execute_steps(run: AgentRun, req: AgentRunCreate, db: Session) -> Non
         db.commit()
 
 
+async def _step_retrieve_context(run: AgentRun, req: AgentRunCreate, step: AgentStep, db: Session) -> dict:
+    existing = _result(run, "rag_context")
+    if step.status in {"completed", "skipped"} and existing:
+        return existing
+    if not req.use_rag:
+        payload = {"enabled": False, "evidence_status": "disabled", "hits": [], "reason": "本次 Agent Run 未启用知识库检索。"}
+        _set_result(run, "rag_context", payload, db)
+        _skip_step(step, payload, db)
+        return payload
+
+    _start_step(run, step, {
+        "goal": req.goal,
+        "workspace_id": req.workspace_id,
+        "knowledge_base_id": req.knowledge_base_id,
+        "top_k": req.rag_top_k,
+        "min_score": req.rag_min_score,
+    }, db)
+    context = workspace_context(db, req.workspace_id)
+    knowledge_base = get_knowledge_base_or_default(db, context, req.knowledge_base_id)
+    query = " ".join(part for part in [
+        req.goal,
+        req.target_audience,
+        req.viewpoint,
+        req.personal_case[:240] if req.personal_case else "",
+    ] if part)
+    hits = search_knowledge(
+        query=query,
+        db=db,
+        context=context,
+        knowledge_base_id=knowledge_base.id,
+        top_k=req.rag_top_k,
+        min_score=req.rag_min_score,
+    )
+    payload = {
+        "enabled": True,
+        "workspace_id": context.workspace_id,
+        "workspace_slug": context.workspace_slug,
+        "knowledge_base_id": knowledge_base.id,
+        "knowledge_base_name": knowledge_base.name,
+        "query": query,
+        "coverage": _rag_coverage(hits),
+        "evidence_status": "sufficient" if _rag_has_sufficient_evidence(hits) else "weak_or_empty",
+        "hits": [hit.to_dict() for hit in hits],
+        "boundary": "RAG 检索仅限当前 workspace_id + knowledge_base_id。",
+    }
+    _set_result(run, "rag_context", payload, db)
+    _finish_step(step, "completed", payload, db)
+    return payload
+
+
 async def _step_topic_ideas(run: AgentRun, req: AgentRunCreate, step: AgentStep, db: Session) -> CustomTopicIdea:
     existing = _result(run, "topic_ideas")
     if step.status == "completed" and existing:
         return _idea_from_payload(_selected_idea_payload(existing))
-    _start_step(run, step, {"goal": req.goal, "mode": run.mode, "provider": req.provider or "local"}, db)
+    rag_note = _rag_note_for_prompt(run)
+    _start_step(run, step, {"goal": req.goal, "mode": run.mode, "provider": req.provider or "local", "rag_enabled": bool(rag_note)}, db)
     ideas_result = await generate_custom_topic_ideas(
         mode=run.mode,
         research_depth=req.research_depth,
         theme=req.goal,
         target_audience=req.target_audience,
         viewpoint=req.viewpoint,
-        personal_case=req.personal_case,
+        personal_case=_join_text(req.personal_case, rag_note),
         content_type=req.content_type,
         source_urls=req.source_urls,
         provider=req.provider or "local",
@@ -184,11 +239,13 @@ async def _step_topic_ideas(run: AgentRun, req: AgentRunCreate, step: AgentStep,
     )
     ideas = sorted(ideas_result.ideas, key=lambda item: item.score, reverse=True)
     selected_idea = ideas[0]
+    _enrich_idea_with_rag(selected_idea, run)
     payload = {
         "research_status": ideas_result.research_status,
         "keywords": ideas_result.keywords,
         "ideas": [_idea_payload(item) for item in ideas],
         "recommended_title": selected_idea.title,
+        "rag_context_used": _rag_context_brief(run),
     }
     _set_result(run, "topic_ideas", payload, db)
     _finish_step(step, "completed", payload, db)
@@ -357,6 +414,7 @@ def _build_agent_decision(
     issues = evaluation.get("issues") if isinstance(evaluation.get("issues"), list) else []
     strengths = evaluation.get("strengths") if isinstance(evaluation.get("strengths"), list) else []
     references = selected_idea.get("references") if isinstance(selected_idea.get("references"), list) else []
+    rag_context = data.get("rag_context") if isinstance(data.get("rag_context"), dict) else {}
 
     decision_status = "ready_for_review"
     if readiness == "not_ready" or score < 60:
@@ -367,6 +425,7 @@ def _build_agent_decision(
     why_this_topic = [
         item for item in [
             selected_idea.get("reason"),
+            _rag_why_this_topic(rag_context),
             f"选题分数 {topic.score}/100，角度是「{topic.content_angle or '未填写'}」。",
             f"目标人群：{topic.target_audience or req.target_audience or 'AI 新手 / 职场人'}。",
         ] if item
@@ -374,6 +433,7 @@ def _build_agent_decision(
 
     next_actions = _build_next_actions(score, readiness, bool(revision), issues, references)
     manual_review_focus = _manual_review_focus(draft, issues, verification_status)
+    _apply_rag_decision_guidance(rag_context, next_actions, manual_review_focus)
     summary = (
         f"Agent 已围绕「{run.goal[:60]}」选择「{topic.title}」，"
         f"生成 {len(cards)} 页图文发布包，当前质量评分 {score}/100。"
@@ -410,8 +470,137 @@ def _build_agent_decision(
             "research_status": topic_ideas.get("research_status") if isinstance(topic_ideas, dict) else None,
             "keywords": topic_ideas.get("keywords") if isinstance(topic_ideas, dict) else [],
             "references": references[:5],
+            "rag_context": _rag_context_brief(run),
         },
     }
+
+
+def _rag_coverage(hits: list) -> dict:
+    if not hits:
+        return {"top_score": 0, "evidence_count": 0, "distinct_documents": 0, "status": "insufficient"}
+    top_score = max(float(hit.score) for hit in hits)
+    distinct_documents = len({hit.document_id for hit in hits})
+    return {
+        "top_score": round(top_score, 4),
+        "evidence_count": len(hits),
+        "distinct_documents": distinct_documents,
+        "status": "sufficient" if _rag_has_sufficient_evidence(hits) else "weak",
+    }
+
+
+def _rag_has_sufficient_evidence(hits: list) -> bool:
+    if not hits:
+        return False
+    return float(hits[0].score) >= 0.18 or (len(hits) >= 2 and float(hits[0].score) >= 0.12)
+
+
+def _rag_note_for_prompt(run: AgentRun) -> str:
+    rag_context = _result(run, "rag_context")
+    if not isinstance(rag_context, dict) or not rag_context.get("enabled"):
+        return ""
+    hits = rag_context.get("hits") if isinstance(rag_context.get("hits"), list) else []
+    if not hits:
+        return "知识库检索结果：没有找到足够相关的证据。请把事实性内容标记为待核验，不要编造来源。"
+    lines = [
+        "知识库检索证据：",
+        "只能把下面 chunk 当作事实依据；没有覆盖到的内容必须标记为待核验。",
+    ]
+    for hit in hits[:5]:
+        if not isinstance(hit, dict):
+            continue
+        chunk_id = hit.get("chunk_id")
+        title = hit.get("title") or "未命名来源"
+        content = str(hit.get("content") or "").replace("\n", " ")[:420]
+        lines.append(f"- [chunk:{chunk_id}] {title}：{content}")
+    return "\n".join(lines)
+
+
+def _rag_context_brief(run: AgentRun) -> dict:
+    rag_context = _result(run, "rag_context")
+    if not isinstance(rag_context, dict):
+        return {"enabled": False, "evidence_status": "disabled", "hits": []}
+    hits = rag_context.get("hits") if isinstance(rag_context.get("hits"), list) else []
+    return {
+        "enabled": bool(rag_context.get("enabled")),
+        "workspace_id": rag_context.get("workspace_id"),
+        "knowledge_base_id": rag_context.get("knowledge_base_id"),
+        "knowledge_base_name": rag_context.get("knowledge_base_name"),
+        "evidence_status": rag_context.get("evidence_status"),
+        "coverage": rag_context.get("coverage") or {},
+        "hits": [
+            {
+                "chunk_id": hit.get("chunk_id"),
+                "title": hit.get("title"),
+                "score": hit.get("score"),
+                "source_uri": hit.get("source_uri"),
+            }
+            for hit in hits[:5]
+            if isinstance(hit, dict)
+        ],
+    }
+
+
+def _enrich_idea_with_rag(idea: CustomTopicIdea, run: AgentRun) -> None:
+    rag_context = _result(run, "rag_context")
+    if not isinstance(rag_context, dict) or not rag_context.get("enabled"):
+        return
+    hits = rag_context.get("hits") if isinstance(rag_context.get("hits"), list) else []
+    if not hits:
+        idea.risk_tip = _join_text(idea.risk_tip, "知识库未检索到足够证据，发布前必须补来源或标记为观点创作。")
+        return
+
+    references = list(idea.references or [])
+    for hit in hits[:4]:
+        if not isinstance(hit, dict):
+            continue
+        references.append(ResearchReference(
+            title=f"知识库证据：{hit.get('title') or '未命名来源'} / chunk {hit.get('chunk_id')}",
+            url=str(hit.get("source_uri") or ""),
+            summary=str(hit.get("content") or "")[:520],
+            source_type="knowledge_base",
+            status="ok",
+        ))
+    idea.references = references
+    idea.verification_status = "有知识库证据待人工核验"
+    idea.summary = _join_text(idea.summary, _rag_summary_for_idea(hits))
+    idea.reason = _join_text(idea.reason, "已优先结合知识库检索证据，适合做成带来源复查的内容。")
+
+
+def _rag_summary_for_idea(hits: list) -> str:
+    excerpts = []
+    for hit in hits[:2]:
+        if isinstance(hit, dict) and hit.get("content"):
+            excerpts.append(str(hit["content"]).replace("\n", " ")[:180])
+    return "知识库证据摘要：" + " / ".join(excerpts) if excerpts else ""
+
+
+def _rag_why_this_topic(rag_context: dict) -> str:
+    if not rag_context.get("enabled"):
+        return ""
+    coverage = rag_context.get("coverage") if isinstance(rag_context.get("coverage"), dict) else {}
+    evidence_count = coverage.get("evidence_count") or 0
+    if rag_context.get("evidence_status") == "sufficient":
+        return f"知识库检索命中 {evidence_count} 条证据，可作为内容事实依据。"
+    return "知识库证据不足，本次更适合作为观点/方案草稿，发布前需要补充来源。"
+
+
+def _apply_rag_decision_guidance(rag_context: dict, actions: list[dict[str, str]], review_focus: list[str]) -> None:
+    if not rag_context.get("enabled"):
+        return
+    if rag_context.get("evidence_status") == "sufficient":
+        review_focus.insert(0, "逐条核对知识库 chunk 引用，确认内容没有超出证据范围。")
+        return
+    review_focus.insert(0, "RAG 没有找到足够证据，事实性表达必须补来源或改成观点/方案。")
+    actions.insert(0, {
+        "priority": "high",
+        "label": "先补充或索引相关素材",
+        "reason": "本次启用了知识库检索，但证据不足；继续发布前应先补来源。",
+        "target": "sources",
+    })
+
+
+def _join_text(*parts: str) -> str:
+    return "\n\n".join(str(part).strip() for part in parts if str(part or "").strip())
 
 
 def _decision_confidence(score: int, verification_status: str, readiness: str) -> str:
@@ -754,6 +943,7 @@ def _prune_results_for_retry(result_json: dict[str, Any], failed_key: str) -> di
     keep = {"_request"}
     order = [key for key, _ in STEP_PLAN]
     result_key_by_step = {
+        "retrieve_context": "rag_context",
         "topic_ideas": "topic_ideas",
         "create_topic": "topic",
         "score_topic": "score",

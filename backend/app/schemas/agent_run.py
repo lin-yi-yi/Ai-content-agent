@@ -20,6 +20,11 @@ class AgentRunCreate(BaseModel):
     provider: str = "local"
     model: str = ""
     auto_score: bool = True
+    use_rag: bool = False
+    workspace_id: int | None = None
+    knowledge_base_id: int | None = None
+    rag_top_k: int = Field(5, ge=1, le=12)
+    rag_min_score: float = Field(0.08, ge=0, le=1)
 
 
 class AgentStepOut(BaseModel):

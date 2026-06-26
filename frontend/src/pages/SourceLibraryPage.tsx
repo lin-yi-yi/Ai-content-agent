@@ -5,6 +5,7 @@ import {
   SourceStats,
   SourceTopicIdea,
   SourceTopicIdeasResponse,
+  RagIndexSourceResult,
   api,
 } from '../api/client';
 
@@ -59,6 +60,9 @@ export default function SourceLibraryPage() {
   const [provider, setProvider] = useState('local');
   const [autoScore, setAutoScore] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [ragIndexing, setRagIndexing] = useState(false);
+  const [ragIndexResult, setRagIndexResult] = useState<RagIndexSourceResult | null>(null);
+  const [ragIndexError, setRagIndexError] = useState('');
 
   const selectedSource = useMemo(
     () => sources.find(item => item.id === selectedId) || null,
@@ -88,6 +92,8 @@ export default function SourceLibraryPage() {
     setIdeasResult(null);
     setSelectedIdeaIndex(null);
     setEditingIdea(emptyIdea);
+    setRagIndexResult(null);
+    setRagIndexError('');
   }, [selectedId]);
 
   const handleGenerateIdeas = async () => {
@@ -108,6 +114,26 @@ export default function SourceLibraryPage() {
       alert('生成素材选题失败: ' + e);
     }
     setLoading(false);
+  };
+
+  const handleIndexForRag = async () => {
+    if (!selectedId) return;
+    setRagIndexing(true);
+    setRagIndexError('');
+    try {
+      const result = await api.indexSourceForRag({ source_id: selectedId });
+      setRagIndexResult(result);
+      await Promise.all([
+        api.getSource(selectedId).then(setDetail),
+        api.listSources({ source_type: typeFilter || undefined, limit: 50 }).then(data => {
+          setSources(data.items);
+          setTotal(data.total);
+        }),
+      ]);
+    } catch (e) {
+      setRagIndexError(e instanceof Error ? e.message : String(e));
+    }
+    setRagIndexing(false);
   };
 
   const handleSelectIdea = (idea: SourceTopicIdea, index: number) => {
@@ -205,10 +231,15 @@ export default function SourceLibraryPage() {
                       {source.quality_flags.slice(0, 3).map(flag => <em key={flag}>{flag}</em>)}
                     </div>
                   )}
-                  {source.summary && <p>{source.summary.slice(0, 110)}</p>}
-                  {source.duplicate_hint && <small className="source-inline-warning">{source.duplicate_hint}</small>}
-                </button>
-              ))}
+	                  {source.summary && <p>{source.summary.slice(0, 110)}</p>}
+	                  {source.rag_index?.indexed && (
+	                    <small className="source-inline-success">
+	                      已索引到知识库 #{source.rag_index.knowledge_base_id} · {source.rag_index.chunk_count} chunks
+	                    </small>
+	                  )}
+	                  {source.duplicate_hint && <small className="source-inline-warning">{source.duplicate_hint}</small>}
+	                </button>
+	              ))}
             </div>
           )}
         </section>
@@ -231,7 +262,24 @@ export default function SourceLibraryPage() {
                     </div>
                   )}
                   {detail.duplicate_hint && <div className="source-duplicate-hint">{detail.duplicate_hint}</div>}
-                  {detail.url && <a href={detail.url} target="_blank">查看原文</a>}
+                  <div className="source-detail-actions">
+                    {detail.url && <a href={detail.url} target="_blank">查看原文</a>}
+                    <button className="btn btn-sm" onClick={handleIndexForRag} disabled={ragIndexing}>
+                      {ragIndexing ? '索引中...' : '索引到知识库'}
+                    </button>
+                  </div>
+                  {(ragIndexResult || ragIndexError) && (
+                    <div className={`source-rag-status ${ragIndexError ? 'error' : 'ok'}`}>
+                      {ragIndexError || `已写入知识库 #${ragIndexResult?.knowledge_base_id}，生成 ${ragIndexResult?.chunk_count} 个 chunk`}
+                    </div>
+                  )}
+                  {detail.rag_index && (
+                    <div className={`source-rag-status ${detail.rag_index.indexed ? 'ok' : 'idle'}`}>
+                      {detail.rag_index.indexed
+                        ? `当前已索引：知识库 #${detail.rag_index.knowledge_base_id} · ${detail.rag_index.chunk_count} 个 chunk`
+                        : `当前未索引到默认知识库 #${detail.rag_index.knowledge_base_id}`}
+                    </div>
+                  )}
                 </div>
               </div>
 

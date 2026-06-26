@@ -22,6 +22,8 @@ export default function AppShell({ active, onNavigate, children }: Props) {
     { key: 'metrics', label: '数据录入' },
     { key: 'reports', label: '7天复盘' },
     { key: 'settings', label: '模型设置' },
+    { key: 'architecture', label: '架构边界' },
+    { key: 'rag', label: 'RAG 实验' },
   ];
 
   return (
@@ -43,7 +45,7 @@ export default function AppShell({ active, onNavigate, children }: Props) {
             <span className={`status-dot ${backendOnline ? 'online' : 'offline'}`} />
             后端 {backendOnline ? '已连接' : '断开'}
           </span>
-          <span>v0.3.0 · Model Router</span>
+          <span>v0.4 foundation · Model Router</span>
         </div>
         {children}
       </main>
